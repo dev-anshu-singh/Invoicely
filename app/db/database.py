@@ -21,7 +21,6 @@ def setup_databases():
             tax_amount REAL,
             currency TEXT,
             category TEXT,
-            needs_review INTEGER,
             line_items_json TEXT,
             ingestion_time TEXT
         )
@@ -41,7 +40,7 @@ def save_to_databases(doc_record: SystemDocumentRecord, sqlite_conn, chroma_coll
 
     cursor.execute("""
         INSERT INTO invoice_metadata
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         doc_record.document_id,
         doc_record.source_filename,
@@ -52,7 +51,6 @@ def save_to_databases(doc_record: SystemDocumentRecord, sqlite_conn, chroma_coll
         doc_record.extraction_data.tax_amount,
         doc_record.extraction_data.currency,
         doc_record.extraction_data.category,
-        int(doc_record.extraction_data.needs_review),
         line_items_str,
         doc_record.ingestion_time
     ))

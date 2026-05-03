@@ -9,4 +9,4 @@ GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY")
 SQLITE_DB_PATH: str = "invoices.db"
 CHROMA_DB_PATH: str = "./chroma_db"
 
-GEMINI_MODEL_NAME: str = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash")
+GEMINI_MODEL_NAME: str = "gemini-2.5-flash"

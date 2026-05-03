@@ -8,6 +8,8 @@ langchain
 langchain-google-genai
 langgraph
 
+langsmith
+
 llama-cloud
 
 chromadb
@@ -15,3 +17,5 @@ chromadb
 nest-asyncio
 opentelemetry-api
 opentelemetry-sdk
+
+python-multipart

@@ -1,0 +1,17 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+
+pydantic
+
+langchain
+langchain-google-genai
+langgraph
+
+llama-cloud
+
+chromadb
+
+nest-asyncio
+opentelemetry-api
+opentelemetry-sdk

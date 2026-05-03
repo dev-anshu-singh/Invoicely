@@ -17,9 +17,8 @@ class InvoiceExtraction(BaseModel):
     tax_amount: Optional[float] = Field(0.0, description="Total tax applied")
     currency: str = Field("USD", description="3-letter currency code")
     category: str = Field(description="Expense category (e.g., 'SaaS', 'Travel')")
-    summary: str = Field(description="1-2 sentence summary of the invoice")
+    summary: str = Field(description="2-3 sentence summary of the invoice")
     line_items: List[LineItem] = Field(default_factory=list, description="List of purchased items")
-    needs_review: bool = Field(False, description="True if text is too messy to find total or vendor")
 
 class SystemDocumentRecord(BaseModel):
     document_id: str = Field(default_factory=lambda: str(uuid.uuid4()))

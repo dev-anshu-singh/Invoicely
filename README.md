@@ -36,7 +36,7 @@ This dual-store design guarantees exact numbers always come from SQL, never from
 | Vector Store | ChromaDB |
 | Relational Store | SQLite |
 | Frontend | Streamlit |
-| Observability | LangSmith + OpenTelemetry |
+| Observability | LangSmith |
 
 ---
 

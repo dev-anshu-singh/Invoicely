@@ -1,4 +1,6 @@
 import sqlite3
+import sqlglot
+from sqlglot import exp
 from langchain_core.tools import tool
 from app.config import SQLITE_DB_PATH
 
@@ -18,6 +20,9 @@ Columns:
   - line_items_json TEXT (JSON string, avoid filtering on this)
   - ingestion_time TEXT (ISO format)
 """
+
+MAX_ROWS = 20
+
 
 @tool
 def search_invoices_sql(query: str) -> str:
@@ -52,10 +57,30 @@ def search_invoices_sql(query: str) -> str:
     if not query.upper().startswith("SELECT"):
         return "Error: Only SELECT queries are allowed."
 
+    # Parse AST and enforce query cap
     try:
-        conn = sqlite3.connect(SQLITE_DB_PATH)
+        expression = sqlglot.parse_one(query, read="sqlite")
+        limit_node = expression.find(exp.Limit)
+        if limit_node is None:
+            expression = expression.limit(MAX_ROWS)
+        else:
+            try:
+                current_limit = int(limit_node.expression.this)
+                if current_limit > MAX_ROWS or current_limit <= 0:
+                    limit_node.args["expression"] = exp.Literal.number(MAX_ROWS)
+            except (ValueError, AttributeError):
+                limit_node.args["expression"] = exp.Literal.number(MAX_ROWS)
+
+        capped_query = expression.sql(dialect="sqlite")
+    except Exception as e:
+        return f"SQL Parsing Error: {str(e)}"
+
+    # Execute query on read-only SQLite connection
+    try:
+        db_uri = f"file:{SQLITE_DB_PATH}?mode=ro"
+        conn = sqlite3.connect(db_uri, uri=True)
         cursor = conn.cursor()
-        cursor.execute(query)
+        cursor.execute(capped_query)
         rows = cursor.fetchall()
         columns = [desc[0] for desc in cursor.description]
         conn.close()
@@ -70,4 +95,4 @@ def search_invoices_sql(query: str) -> str:
         return "\n".join(result)
 
     except Exception as e:
-        return f"SQL Error: {str(e)}"
+        return f"SQL Error: {str(e)}"

@@ -23,3 +23,4 @@ opentelemetry-sdk
 python-multipart
 
 streamlit
+sqlglot

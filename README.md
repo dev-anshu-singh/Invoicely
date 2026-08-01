@@ -1,112 +1,213 @@
 # Invoicely
 
-An AI-powered invoice ingestion and agentic query engine. Upload invoice PDFs/images and ask natural language questions about them, semantic questions go to ChromaDB vector database, exact number queries go to SQLite database.
+Invoicely is an AI-powered invoice ingestion and analysis app. It accepts invoice PDFs and images, extracts structured invoice data, stores it in SQLite for exact reporting, stores searchable summaries in ChromaDB for semantic lookup, and exposes a conversational assistant for asking questions about the invoice history.
 
----
+The project currently includes:
 
-## How It Works
+- A FastAPI backend for upload, ingestion, invoice listing, health checks, and chat.
+- A Streamlit frontend for uploading invoices, viewing stored invoice metadata, and chatting with the assistant.
+- A LangGraph agent that chooses between SQL search and vector search.
+- A LlamaCloud + Gemini extraction pipeline that turns invoice documents into a strict Pydantic schema.
 
-### Ingestion (Write Path)
-1. You upload an invoice (PDF or image) via the API.
-2. **LlamaParse** converts it to clean Markdown.
-3. **Google Gemini** reads the Markdown and extracts structured data (vendor, amounts, dates, line items) into a strict JSON schema.
-4. The data is split into two stores:
-   - **SQLite** — for structured queries (totals, tax, dates)
-   - **ChromaDB** — for semantic search (descriptions, summaries)
+## Architecture
 
-The upload endpoint returns immediately; all processing happens in the background.
+```mermaid
+flowchart LR
+    A[Streamlit UI] -->|POST /upload| B[FastAPI]
+    B --> C[Background ingestion task]
+    C --> D[LlamaCloud parsing]
+    D --> E[Markdown invoice text]
+    E --> F[Gemini structured extraction]
+    F --> G[SQLite invoice_metadata]
+    F --> H[ChromaDB invoice_vectors]
 
-### Querying (Read Path)
-A **LangGraph** agent takes your natural language question and routes it:
-- *"What did we buy from Acme?"* → ChromaDB (vector search)
-- *"What is the total tax this month?"* → SQLite (deterministic SQL)
+    A -->|POST /chat| I[LangGraph chat agent]
+    I --> J{Question type}
+    J -->|Numbers, dates, filters| K[Read-only SQL tool]
+    J -->|Concepts, vendors, items| L[Vector search tool]
+    K --> I
+    L --> I
+    I --> A
+```
 
-This dual-store design guarantees exact numbers always come from SQL, never from LLM memory. Conversations are stateful — each `session_id` maintains its own thread.
+## Features
 
----
+- Upload invoice files through the API or Streamlit UI.
+- Supported frontend upload types: `pdf`, `png`, `jpg`, `jpeg`, `webp`, and `tiff`.
+- Process uploads asynchronously with FastAPI background tasks, so the upload response returns immediately.
+- Parse uploaded documents with LlamaCloud and return Markdown content.
+- Extract invoice data with Google Gemini using structured output.
+- Store exact invoice fields in SQLite.
+- Store semantic invoice summaries and purchased item descriptions in ChromaDB.
+- List stored invoices with document ID, vendor, amount, and invoice date.
+- Ask natural-language questions in a stateful chat session.
+- Route structured questions to SQL for deterministic results.
+- Route semantic questions to ChromaDB vector search.
+- Enforce read-only SQL queries with `SELECT`-only validation.
+- Automatically cap SQL result sets to 20 rows unless the app is changed.
+- Use a short SQL execution timeout to avoid stuck database calls.
+- Preserve chat context per `session_id` using LangGraph memory.
+- Stop runaway tool loops with a 3-step circuit breaker and fallback response.
+- Hide raw SQL/tool output from the user-facing assistant response.
 
-## Stack
+## Extracted Invoice Schema
 
-| | |
+Each processed invoice is normalized into these fields:
+
+| Field | Description |
 |---|---|
-| API | FastAPI + Uvicorn |
-| Document Parsing | LlamaParse (LlamaCloud) |
-| LLM | Google Gemini 2.5 Flash |
-| Agent | LangGraph |
-| Vector Store | ChromaDB |
-| Relational Store | SQLite |
-| Frontend | Streamlit |
-| Observability | LangSmith |
+| `document_id` | Generated UUID for the stored document |
+| `ingestion_time` | Timestamp when the system record is created |
+| `source_filename` | Original uploaded filename |
+| `vendor_name` | Company issuing the invoice |
+| `invoice_number` | Invoice ID, if present |
+| `invoice_date` | Date normalized as `YYYY-MM-DD` |
+| `total_amount` | Final invoice amount including taxes |
+| `tax_amount` | Total tax amount, defaulting to `0.0` when missing |
+| `currency` | 3-letter currency code, defaulting to `USD` |
+| `category` | Broad expense category such as SaaS, Travel, Hardware, Consulting |
+| `summary` | Short natural-language invoice summary |
+| `line_items` | Purchased items with description, quantity, unit price, and total |
 
----
+SQLite stores the structured metadata in the `invoice_metadata` table. ChromaDB stores a searchable text chunk containing the invoice summary and line item descriptions, with vendor and category metadata.
+
+## Tech Stack
+
+| Area | Technology |
+|---|---|
+| API | FastAPI, Uvicorn |
+| Frontend | Streamlit |
+| Document parsing | LlamaCloud |
+| Extraction model | Google Gemini via LangChain |
+| Chat agent | LangGraph |
+| Agent tools | LangChain tools |
+| Structured storage | SQLite |
+| Semantic storage | ChromaDB |
+| SQL safety/parsing | sqlglot |
+| Environment config | python-dotenv |
+| Observability support | LangSmith dependencies |
+
+## Project Structure
+
+```text
+.
++-- main.py                         # FastAPI app entrypoint
++-- requirements.txt                # Python dependencies
++-- frontend/
+|   +-- app.py                      # Streamlit upload/chat interface
++-- app/
+    +-- config.py                   # Environment and storage paths
+    +-- llm.py                      # Gemini model factories
+    +-- db/
+    |   +-- database.py             # SQLite and Chroma setup/persistence
+    +-- models/
+    |   +-- schemas.py              # Pydantic invoice schemas
+    +-- prompts/
+    |   +-- templates.py            # Extraction and chat prompts
+    +-- routers/
+    |   +-- upload.py               # /upload and /invoices endpoints
+    |   +-- chat.py                 # /chat endpoint
+    +-- services/
+        +-- ingestion_logic.py      # LlamaCloud + Gemini ingestion pipeline
+        +-- chat_graph.py           # LangGraph agent workflow
+        +-- tools/
+            +-- sql_search.py       # Read-only SQL search tool
+            +-- vector_search.py    # Chroma semantic search tool
+```
 
 ## Setup
 
-### 1. Clone and install
+### 1. Create a virtual environment
 
 ```bash
-git clone https://github.com/your-username/invoicely.git
-cd invoicely
-python -m venv venv
-source venv/bin/activate      # Windows: venv\Scripts\activate
+python -m venv .venv
+```
+
+Activate it:
+
+```bash
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
+
+# macOS/Linux
+source .venv/bin/activate
+```
+
+### 2. Install dependencies
+
+```bash
 pip install -r requirements.txt
 ```
 
-### 2. Configure environment variables
+### 3. Configure environment variables
 
 Create a `.env` file in the project root:
 
 ```env
-# Required
-LLAMA_CLOUD_API_KEY='llx-...'
-GOOGLE_API_KEY='AIza...'
+LLAMA_CLOUD_API_KEY=llx-...
+GOOGLE_API_KEY=AIza...
 
-# Optional — defaults to gemini-2.5-flash
-GEMINI_MODEL_NAME='gemini-2.5-flash'
-GEMINI_CHAT_MODEL_NAME='gemini-2.5-flash'
-
-# LangSmith observability (optional but recommended)
-export LANGSMITH_TRACING=true
-export LANGSMITH_ENDPOINT='https://api.smith.langchain.com'
-export LANGSMITH_API_KEY='lsv2_...'
-export LANGSMITH_PROJECT='invoicely'
+# Optional. Defaults are set in app/config.py.
+GEMINI_CHAT_MODEL_NAME=gemini-3.1-flash-lite-preview
 ```
 
-> The LangSmith variables can also be exported directly in your shell instead of the `.env` file.
+Optional LangSmith variables can also be set if you want tracing:
 
-### 3. Run the API
+```env
+LANGSMITH_TRACING=true
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+LANGSMITH_API_KEY=lsv2_...
+LANGSMITH_PROJECT=invoicely
+```
+
+## Running the App
+
+Start the FastAPI backend:
 
 ```bash
 uvicorn main:app --reload
 ```
 
-API runs at `http://localhost:8000` — interactive docs at `http://localhost:8000/docs`.
+The API runs at:
 
-### 4. Run the Streamlit frontend
+- `http://127.0.0.1:8000`
+- `http://127.0.0.1:8000/docs` for Swagger UI
+
+In a second terminal, start the Streamlit frontend:
 
 ```bash
-streamlit run app.py
+streamlit run frontend/app.py
 ```
 
----
+The frontend expects the API at `http://127.0.0.1:8000`.
 
-## API Endpoints
+## API Reference
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/upload` | Upload an invoice (PDF/image) for async processing |
-| `GET` | `/invoices` | List all stored invoices |
-| `POST` | `/chat` | Send a message to the LangGraph agent |
-| `GET` | `/` | Health check |
+### `GET /`
 
-### Example: upload an invoice
+Health check endpoint.
+
+Example response:
+
+```json
+{
+  "status": "Invoicely API is running!"
+}
+```
+
+### `POST /upload`
+
+Uploads an invoice file and queues background processing.
+
+Example:
 
 ```bash
-curl -X POST http://localhost:8000/upload \
+curl -X POST http://127.0.0.1:8000/upload \
   -F "file=@invoice.pdf"
 ```
 
-Response:
+Example response:
+
 ```json
 {
   "message": "Invoice received and processing started.",
@@ -114,17 +215,87 @@ Response:
 }
 ```
 
-### Example: query the agent
+### `GET /invoices`
 
-```bash
-curl -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{"session_id": "user-123", "message": "What is the total tax across all invoices?"}'
-```
+Lists stored invoice metadata from SQLite.
 
-Response:
+Example response:
+
 ```json
 {
-  "reply": "The total tax across all invoices is $340.50."
+  "total_invoices": 1,
+  "invoices": [
+    {
+      "document_id": "4d46a07f-42b0-4c3a-ae77-f18c71f640ea",
+      "vendor": "Acme Inc.",
+      "total": 1200.5,
+      "date": "2026-07-30"
+    }
+  ]
 }
 ```
+
+### `POST /chat`
+
+Sends a message to the LangGraph invoice assistant.
+
+Request body:
+
+```json
+{
+  "session_id": "user-or-session-id",
+  "message": "What is the total spend by vendor?"
+}
+```
+
+Example response:
+
+```json
+{
+  "reply": "Here is the total spend by vendor..."
+}
+```
+
+## Chat Behavior
+
+The assistant has two tools:
+
+| Tool | Used for |
+|---|---|
+| `search_invoices_sql` | Totals, counts, dates, filters, invoice lists, category/vendor summaries |
+| `search_invoices_vector` | Semantic questions about purchased items, services, summaries, and concepts |
+
+Example questions:
+
+- `What is the total spend by vendor?`
+- `How many invoices are in each category?`
+- `Show invoices above $500.`
+- `What is the total tax across all invoices?`
+- `Any SaaS expenses?`
+- `Find invoices related to cloud software.`
+- `What did we buy from Acme?`
+
+## Data Storage Notes
+
+- `SQLITE_DB_PATH` defaults to `invoices.db`.
+- `CHROMA_DB_PATH` defaults to `./chroma_db`.
+- The SQLite table is created automatically if it does not exist.
+- The Chroma collection is created automatically as `invoice_vectors`.
+- Uploaded files are temporarily saved as `temp_<filename>` and deleted after processing.
+
+## Important Implementation Details
+
+- The ingestion prompt treats parsed document content as data only, which helps reduce prompt-injection risk from invoice text.
+- The extraction model is configured with temperature `0` for deterministic structured extraction.
+- The chat model is configured separately from the extraction model.
+- SQL search opens SQLite in read-only mode and rejects non-`SELECT` statements.
+- The SQL tool injects live database table context into its docstring so the agent can inspect the available schema.
+- The Streamlit app keeps a local chat history and creates a new UUID session when the chat is cleared.
+
+## Limitations
+
+- Upload processing happens in-process with FastAPI background tasks; it is not a durable queue.
+- The `/upload` response only confirms that processing started, not that extraction succeeded.
+- The frontend invoice list is refreshed manually with the Refresh button.
+- SQL filtering does not inspect `line_items_json`; semantic item questions should use vector search.
+- The current app uses local SQLite and ChromaDB paths, so it is designed for local development and proof-of-concept usage.

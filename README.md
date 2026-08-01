@@ -1,6 +1,6 @@
 # Invoicely
 
-Invoicely is an AI-powered invoice ingestion and analysis app. It accepts invoice PDFs and images, extracts structured invoice data, stores it in SQLite for exact reporting, stores searchable summaries in ChromaDB for semantic lookup, and exposes a conversational assistant for asking questions about the invoice history.
+Invoicely is an agentic RAG invoice ingestion and analysis app. It accepts invoice PDFs and images, extracts structured invoice data, stores exact fields in SQLite, stores searchable summaries in ChromaDB, and uses a LangGraph agent to decide which retrieval path should answer each user question.
 
 The project currently includes:
 
@@ -9,26 +9,23 @@ The project currently includes:
 - A LangGraph agent that chooses between SQL search and vector search.
 - A LlamaCloud + Gemini extraction pipeline that turns invoice documents into a strict Pydantic schema.
 
-## Architecture
+## How It Works
 
-```mermaid
-flowchart LR
-    A[Streamlit UI] -->|POST /upload| B[FastAPI]
-    B --> C[Background ingestion task]
-    C --> D[LlamaCloud parsing]
-    D --> E[Markdown invoice text]
-    E --> F[Gemini structured extraction]
-    F --> G[SQLite invoice_metadata]
-    F --> H[ChromaDB invoice_vectors]
+Invoicely has two main paths:
 
-    A -->|POST /chat| I[LangGraph chat agent]
-    I --> J{Question type}
-    J -->|Numbers, dates, filters| K[Read-only SQL tool]
-    J -->|Concepts, vendors, items| L[Vector search tool]
-    K --> I
-    L --> I
-    I --> A
-```
+| Path | Flow | Purpose |
+|---|---|---|
+| Ingestion | Streamlit/API upload -> FastAPI background task -> LlamaCloud parsing -> Gemini extraction -> SQLite + ChromaDB | Converts invoice files into structured records and searchable semantic context |
+| Chat | User question -> LangGraph agent -> SQL tool or vector tool -> assistant response | Answers invoice questions using the best retrieval source for the query |
+
+The split storage design is intentional: SQLite handles exact totals, dates, filters, and aggregations, while ChromaDB handles fuzzy or semantic questions about vendors, categories, summaries, and purchased items.
+
+## Security & Reliability Guardrails
+
+- Prompt injection defense: The ingestion prompt wraps extracted OCR/Markdown text inside explicit `<document_content>` XML delimiters and instructs the model to treat everything inside those tags strictly as untrusted document data, not executable instructions.
+- Dynamic schema injection: The SQL tool uses LangChain's `SQLDatabase` utility to inspect the live SQLite schema and sample rows, then injects that context into the tool description instead of relying on a hardcoded database summary.
+- Query sandboxing: SQL access is limited to `SELECT` statements, runs through a read-only SQLite connection using `?mode=ro`, and uses a strict `2.0` second timeout so bad or overly complex generated queries cannot freeze the app.
+- Agentic circuit breaker: The LangGraph state tracks tool-loop progress with an `operator.add` reducer, enforces a strict 3-step limit, and routes to a graceful fallback that stops database retries and provides the best vector/context-based answer available.
 
 ## Features
 

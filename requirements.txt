@@ -9,6 +9,7 @@ langchain
 langchain_core
 langchain-google-genai
 langgraph
+langchain_community
 
 langsmith
 
@@ -23,4 +24,4 @@ opentelemetry-sdk
 python-multipart
 
 streamlit
-sqlglot
+sqlglot
